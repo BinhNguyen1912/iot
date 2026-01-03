@@ -68,19 +68,13 @@ public class AuthController {
                     Map.of("success", false, "message", "Email is required"));
         }
 
-        // 1. Lấy user qua Service
         User user = userService.findOrCreateByEmail(email);
-
-        // 2. Sinh OTP
         String otp = OtpUtil.generateOtp4Digits();
 
-        // 3. Overwrite OTP
         user.setOtp(otp);
-
-        // 4. Lưu DB qua Service
         userService.save(user);
 
-        // 5. Gửi email
+        // ✅ Gửi async, không block
         emailService.sendOtpEmail(email, otp);
 
         return ResponseEntity.ok(

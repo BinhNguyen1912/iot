@@ -3,10 +3,12 @@ package com.nguyenanhbinh.lab306new.service.impl;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.nguyenanhbinh.lab306new.service.EmailService;
 
+@Async
 @Service
 public class EmailServiceImpl implements EmailService {
 
