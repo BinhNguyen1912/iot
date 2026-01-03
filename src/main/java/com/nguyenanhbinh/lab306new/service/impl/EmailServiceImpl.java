@@ -57,8 +57,8 @@
 package com.nguyenanhbinh.lab306new.service.impl;
 
 import com.nguyenanhbinh.lab306new.service.EmailService;
-import com.resend.*;
-import com.resend.services.emails.model.SendEmailRequest;
+import com.resend.Resend;
+import com.resend.services.emails.model.CreateEmailOptions;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,34 +70,33 @@ public class EmailServiceImpl implements EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailServiceImpl.class);
 
     private Resend resend;
-    private final String apiKey = System.getenv("RESEND_API_KEY");
-    private final String from = System.getenv().getOrDefault(
-            "MAIL_FROM", "onboarding@resend.dev");
 
     @PostConstruct
     void init() {
+        String apiKey = System.getenv("RESEND_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("❌ RESEND_API_KEY is missing");
         }
         resend = new Resend(apiKey);
-        log.info("✅ Resend email service initialized");
+        log.info("✅ Resend initialized");
     }
 
     @Override
     public void sendOtpEmail(String toEmail, String otp) {
         try {
-            SendEmailRequest email = SendEmailRequest.builder()
-                    .from(from)
+            CreateEmailOptions options = CreateEmailOptions.builder()
+                    .from("onboarding@resend.dev") // free domain
                     .to(toEmail)
                     .subject("Your OTP Verification Code")
                     .html(buildTemplate(otp))
                     .build();
 
-            resend.emails().send(email);
+            resend.emails().send(options);
+
             log.info("📧 OTP email sent to {}", toEmail);
 
         } catch (Exception e) {
-            log.error("❌ Failed to send OTP email to {}", toEmail, e);
+            log.error("❌ Failed to send OTP email", e);
             throw new RuntimeException("Failed to send OTP email");
         }
     }
