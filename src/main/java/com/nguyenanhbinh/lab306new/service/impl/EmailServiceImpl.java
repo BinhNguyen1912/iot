@@ -7,18 +7,21 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.nguyenanhbinh.lab306new.service.EmailService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Async
 @Service
 public class EmailServiceImpl implements EmailService {
 
     private final JavaMailSender mailSender;
+    private static final Logger log = LoggerFactory.getLogger(EmailServiceImpl.class);
 
     public EmailServiceImpl(JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
     @Override
+    @Async
     public void sendOtpEmail(String toEmail, String otp) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
@@ -29,8 +32,11 @@ public class EmailServiceImpl implements EmailService {
             helper.setText(buildEmailTemplate(otp), true);
 
             mailSender.send(message);
+            log.info("✅ OTP email sent to {}", toEmail);
+
         } catch (Exception e) {
-            throw new RuntimeException("Failed to send email");
+            // ❗ TUYỆT ĐỐI KHÔNG THROW
+            log.error("❌ Failed to send OTP email to {}", toEmail, e);
         }
     }
 
