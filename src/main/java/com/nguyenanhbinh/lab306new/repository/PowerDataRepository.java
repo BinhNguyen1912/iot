@@ -1,6 +1,9 @@
 package com.nguyenanhbinh.lab306new.repository;
 
 import com.nguyenanhbinh.lab306new.model.PowerData;
+
+import jakarta.transaction.Transactional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
