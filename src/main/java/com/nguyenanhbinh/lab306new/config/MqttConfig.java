@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MqttConfig {
 
     // ✅ ĐÃ SỬA: BROKER URL KHỚP VỚI ESP32
-    private final String brokerUrl = "tcp://broker.hivemq.com:1883";
+    private final String brokerUrl = "tcp://tcp://trolley.proxy.rlwy.net:46563";
     private final String clientId = "spring-boot-client";
     private static final Logger LOGGER = LoggerFactory.getLogger(MqttConfig.class);
 
