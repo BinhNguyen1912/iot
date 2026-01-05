@@ -24,19 +24,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @Configuration
 public class MqttConfig {
 
-    // ✅ ĐÃ SỬA: BROKER URL KHỚP VỚI ESP32
-    private final String brokerUrl = "tcp://tcp://trolley.proxy.rlwy.net:46563";
+    // ✅ DÙNG MQTT BROKER CỦA BẠN TRÊN RAILWAY
+    private final String brokerUrl = "tcp://trolley.proxy.rlwy.net:46563";
     private final String clientId = "spring-boot-client";
     private static final Logger LOGGER = LoggerFactory.getLogger(MqttConfig.class);
 
-    // ✅ Topics ESP32 đang publish
     private static final String TOPIC_CURRENT = "device/current";
     private static final String TOPIC_POWER = "device/power";
 
     private final PowerDataService powerDataService;
     private final WebSocketService webSocketService;
 
-    // Cache để ghép current + power
     private final ConcurrentHashMap<String, Double> currentCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double> powerCache = new ConcurrentHashMap<>();
     private volatile Integer lastRelayState = 0;
