@@ -158,7 +158,6 @@
 //         return devices.get(0).getId();
 //     }
 // }
-
 package com.nguyenanhbinh.lab306new.config;
 
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
@@ -176,8 +175,11 @@ import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 
-import com.nguyenanhbinh.lab306new.service.PowerMqttHandler;
+import com.nguyenanhbinh.lab306new.service.PowerDataService;
+import com.nguyenanhbinh.lab306new.service.WebSocketService;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
 public class MqttConfig {
@@ -186,15 +188,23 @@ public class MqttConfig {
     private final String clientId = "spring-boot-client";
     private static final Logger LOGGER = LoggerFactory.getLogger(MqttConfig.class);
 
-    // ✅ TOPICS ESP32 GỬI DỮ LIỆU
+    // ✅ Topics ESP32
     private static final String TOPIC_CURRENT = "device/current";
     private static final String TOPIC_POWER = "device/power";
 
-    private final PowerMqttHandler powerMqttHandler;
+    private final PowerDataService powerDataService;
+    private final WebSocketService webSocketService;
+
+    // ✅ Cache để ghép current + power
+    private final ConcurrentHashMap<String, Double> currentCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Double> powerCache = new ConcurrentHashMap<>();
+    private volatile Integer lastRelayState = 0;
 
     @Autowired
-    public MqttConfig(PowerMqttHandler powerMqttHandler) {
-        this.powerMqttHandler = powerMqttHandler;
+    public MqttConfig(PowerDataService powerDataService, WebSocketService webSocketService) {
+        this.powerDataService = powerDataService;
+        this.webSocketService = webSocketService;
+        LOGGER.info("🚀 MqttConfig initialized with services");
     }
 
     @Bean
@@ -213,11 +223,6 @@ public class MqttConfig {
         return new DirectChannel();
     }
 
-    /**
-     * ✅ Subscribe đúng topics của ESP32
-     * - device/current
-     * - device/power
-     */
     @Bean
     public MqttPahoMessageDrivenChannelAdapter inbound() {
         String[] topics = { TOPIC_CURRENT, TOPIC_POWER };
@@ -236,33 +241,108 @@ public class MqttConfig {
     }
 
     /**
-     * ✅ Handler xử lý message từ ESP32
+     * ✅ Handler xử lý message (LOGIC TRỰC TIẾP - KHÔNG QUA SERVICE RIÊNG)
      */
     @Bean
     @ServiceActivator(inputChannel = "mqttInputChannel")
     public MessageHandler handler() {
         return message -> {
-            String topic = message.getHeaders().get("mqtt_receivedTopic", String.class);
-            String payload = message.getPayload().toString();
+            try {
+                String topic = message.getHeaders().get("mqtt_receivedTopic", String.class);
+                String payload = message.getPayload().toString();
 
-            LOGGER.debug("📥 MQTT Message - Topic: {}, Payload: {}", topic, payload);
+                LOGGER.info("📥 MQTT Message - Topic: {}, Payload: {}", topic, payload);
 
-            // ✅ Route message theo topic
-            if (TOPIC_CURRENT.equals(topic)) {
-                powerMqttHandler.handleCurrent(payload);
+                // ✅ Xử lý CURRENT
+                if (TOPIC_CURRENT.equals(topic)) {
+                    handleCurrent(payload);
+                }
+                // ✅ Xử lý POWER
+                else if (TOPIC_POWER.equals(topic)) {
+                    handlePower(payload);
+                } else {
+                    LOGGER.warn("⚠️ Unknown topic: {}", topic);
+                }
 
-            } else if (TOPIC_POWER.equals(topic)) {
-                powerMqttHandler.handlePower(payload);
-
-            } else {
-                LOGGER.warn("⚠️ Unknown topic: {}", topic);
+            } catch (Exception e) {
+                LOGGER.error("❌ Error handling MQTT message: {}", e.getMessage(), e);
             }
         };
     }
 
     /**
-     * ✅ Outbound channel để gửi lệnh điều khiển
+     * ✅ Xử lý message từ device/current
      */
+    private void handleCurrent(String payload) {
+        try {
+            Double current = Double.parseDouble(payload.trim());
+            currentCache.put("latest", current);
+
+            // Tính relay state
+            int relayState = (current > 0.1) ? 1 : 0;
+            lastRelayState = relayState;
+
+            LOGGER.info("📊 CURRENT: {} A (Relay: {})", current, relayState);
+
+            // Kiểm tra xem đã có power chưa
+            saveIfComplete();
+
+        } catch (NumberFormatException e) {
+            LOGGER.error("❌ Invalid current format: {}", payload);
+        }
+    }
+
+    /**
+     * ✅ Xử lý message từ device/power
+     */
+    private void handlePower(String payload) {
+        try {
+            Double power = Double.parseDouble(payload.trim());
+            powerCache.put("latest", power);
+
+            LOGGER.info("⚡ POWER: {} W", power);
+
+            // Kiểm tra xem đã có current chưa
+            saveIfComplete();
+
+        } catch (NumberFormatException e) {
+            LOGGER.error("❌ Invalid power format: {}", payload);
+        }
+    }
+
+    /**
+     * ✅ Lưu vào DB khi đã có đủ current + power
+     */
+    private void saveIfComplete() {
+        Double current = currentCache.get("latest");
+        Double power = powerCache.get("latest");
+
+        if (current != null && power != null) {
+            LOGGER.info("💾 Saving: I={} A, P={} W, Relay={}", current, power, lastRelayState);
+
+            try {
+                // ✅ Lưu vào DB
+                var saved = powerDataService.savePowerData(current, power, lastRelayState);
+
+                LOGGER.info("✅ SAVED TO DB - ID: {}", saved.getId());
+
+                // ✅ Gửi WebSocket
+                String jsonPayload = String.format(
+                        "{\"current\":%.3f,\"power\":%.1f,\"relay\":%d,\"timestamp\":\"%s\"}",
+                        current, power, lastRelayState, saved.getTimestamp());
+
+                webSocketService.sendPowerDataUpdate(jsonPayload);
+
+                LOGGER.info("📤 WebSocket sent");
+
+            } catch (Exception e) {
+                LOGGER.error("❌ Error saving: {}", e.getMessage(), e);
+            }
+        } else {
+            LOGGER.debug("⏳ Waiting - Current: {}, Power: {}", current, power);
+        }
+    }
+
     @Bean
     @ServiceActivator(inputChannel = "mqttOutboundChannel")
     public MessageHandler mqttOutbound() {
