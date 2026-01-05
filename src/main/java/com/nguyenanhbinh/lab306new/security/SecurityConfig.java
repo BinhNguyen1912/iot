@@ -30,8 +30,23 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+
+                        // ✅ PRE-FLIGHT
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // ✅ AUTH API
                         .requestMatchers("/api/auth/**").permitAll()
+
+                        // ✅ WEBSOCKET ENDPOINT
+                        .requestMatchers("/ws/**").permitAll()
+
+                        // ✅ STOMP TOPICS (server -> client)
+                        .requestMatchers("/topic/**").permitAll()
+
+                        // ✅ REST POWER API (nếu Flutter gọi)
+                        .requestMatchers("/power/**").permitAll()
+
+                        // ❗ CÁC API KHÁC VẪN CẦN JWT
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
