@@ -87,6 +87,19 @@
             <scope>runtime</scope>
         </dependency>
 
+         <!-- ✅ WebSocket Support (ĐÃ BAO GỒM STOMP & MESSAGING) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!-- ✅ SockJS (Fallback cho WebSocket) -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>sockjs-client</artifactId>
+            <version>1.5.1</version>
+        </dependency>
+
         <!-- ========================= -->
         <!-- MQTT -->
         <!-- ========================= -->

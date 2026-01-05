@@ -161,11 +161,6 @@
 
 package com.nguyenanhbinh.lab306new.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nguyenanhbinh.lab306new.model.Telemetry;
-import com.nguyenanhbinh.lab306new.repository.DeviceRepository;
-import com.nguyenanhbinh.lab306new.service.PowerDataService;
-import com.nguyenanhbinh.lab306new.service.TelemetryService;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -181,175 +176,105 @@ import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import com.nguyenanhbinh.lab306new.service.PowerMqttHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Configuration
 public class MqttConfig {
 
+    private final String brokerUrl = "tcp://localhost:1883";
+    private final String clientId = "spring-boot-client";
     private static final Logger LOGGER = LoggerFactory.getLogger(MqttConfig.class);
 
-    /* ================= ENV ================= */
-    private static final String BROKER_URL = System.getenv().getOrDefault("MQTT_BROKER_URL", "tcp://localhost:1883");
+    // ✅ TOPICS ESP32 GỬI DỮ LIỆU
+    private static final String TOPIC_CURRENT = "device/current";
+    private static final String TOPIC_POWER = "device/power";
 
-    private static final String MQTT_USERNAME = System.getenv().getOrDefault("MQTT_USERNAME", "");
+    private final PowerMqttHandler powerMqttHandler;
 
-    private static final String MQTT_PASSWORD = System.getenv().getOrDefault("MQTT_PASSWORD", "");
-
-    private static final String CLIENT_ID = "spring-" + System.currentTimeMillis();
-
-    /* ================= TOPIC PATTERN ================= */
-    private static final Pattern DEVICE_TOPIC_PATTERN = Pattern.compile("^device/(\\d+)/data$");
-
-    private final TelemetryService telemetryService;
-    private final DeviceRepository deviceRepository;
-    private final PowerDataService powerDataService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    public MqttConfig(
-            TelemetryService telemetryService,
-            DeviceRepository deviceRepository,
-            PowerDataService powerDataService) {
-        this.telemetryService = telemetryService;
-        this.deviceRepository = deviceRepository;
-        this.powerDataService = powerDataService;
+    @Autowired
+    public MqttConfig(PowerMqttHandler powerMqttHandler) {
+        this.powerMqttHandler = powerMqttHandler;
     }
-
-    /* ================= MQTT FACTORY ================= */
 
     @Bean
     public MqttPahoClientFactory mqttClientFactory() {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
-
         MqttConnectOptions options = new MqttConnectOptions();
-        options.setServerURIs(new String[] { BROKER_URL });
-        options.setCleanSession(true);
+        options.setServerURIs(new String[] { brokerUrl });
         options.setAutomaticReconnect(true);
-        options.setConnectionTimeout(10);
-        options.setKeepAliveInterval(30);
-
-        if (!MQTT_USERNAME.isBlank()) {
-            options.setUserName(MQTT_USERNAME);
-            options.setPassword(MQTT_PASSWORD.toCharArray());
-        }
-
+        options.setCleanSession(true);
         factory.setConnectionOptions(options);
-
-        LOGGER.info("MQTT connecting to {}", BROKER_URL);
         return factory;
     }
-
-    /* ================= INBOUND ================= */
 
     @Bean
     public MessageChannel mqttInputChannel() {
         return new DirectChannel();
     }
 
+    /**
+     * ✅ Subscribe đúng topics của ESP32
+     * - device/current
+     * - device/power
+     */
     @Bean
     public MqttPahoMessageDrivenChannelAdapter inbound() {
-        String[] topics = {
-                "device/+/data",
-                "device/power"
-        };
+        String[] topics = { TOPIC_CURRENT, TOPIC_POWER };
 
         MqttPahoMessageDrivenChannelAdapter adapter = new MqttPahoMessageDrivenChannelAdapter(
-                CLIENT_ID + "_in",
-                mqttClientFactory(),
-                topics);
+                clientId + "_in", mqttClientFactory(), topics);
 
-        adapter.setQos(1);
         adapter.setCompletionTimeout(5000);
         adapter.setConverter(new DefaultPahoMessageConverter());
+        adapter.setQos(1);
         adapter.setOutputChannel(mqttInputChannel());
+
+        LOGGER.info("✅ MQTT Adapter subscribed to: {}", String.join(", ", topics));
 
         return adapter;
     }
 
-    /* ================= MESSAGE HANDLER ================= */
-
+    /**
+     * ✅ Handler xử lý message từ ESP32
+     */
     @Bean
     @ServiceActivator(inputChannel = "mqttInputChannel")
-    public MessageHandler mqttInboundHandler() {
+    public MessageHandler handler() {
         return message -> {
-            String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
+            String topic = message.getHeaders().get("mqtt_receivedTopic", String.class);
             String payload = message.getPayload().toString();
 
-            LOGGER.info("MQTT IN | topic={} payload={}", topic, payload);
+            LOGGER.debug("📥 MQTT Message - Topic: {}, Payload: {}", topic, payload);
 
-            if ("device/power".equals(topic)) {
-                handlePowerTopic(payload);
-                return;
+            // ✅ Route message theo topic
+            if (TOPIC_CURRENT.equals(topic)) {
+                powerMqttHandler.handleCurrent(payload);
+
+            } else if (TOPIC_POWER.equals(topic)) {
+                powerMqttHandler.handlePower(payload);
+
+            } else {
+                LOGGER.warn("⚠️ Unknown topic: {}", topic);
             }
-
-            Long deviceId = resolveDeviceId(topic);
-            if (deviceId == null) {
-                LOGGER.warn("Không xác định được deviceId cho topic {}", topic);
-                return;
-            }
-
-            Telemetry telemetry = new Telemetry();
-            telemetry.setDeviceId(deviceId);
-            telemetry.setPayload(payload);
-
-            telemetryService.saveTelemetry(telemetry);
         };
     }
 
-    /* ================= POWER ================= */
-
-    private void handlePowerTopic(String json) {
-        try {
-            Map<String, Object> data = objectMapper.readValue(json, Map.class);
-
-            Double current = ((Number) data.get("current")).doubleValue();
-            Double power = ((Number) data.get("power")).doubleValue();
-            Integer relay = ((Number) data.get("relay")).intValue();
-
-            powerDataService.savePowerData(current, power, relay);
-
-            LOGGER.info("POWER | I={}A P={}W Relay={}", current, power, relay);
-        } catch (Exception e) {
-            LOGGER.error("Parse device/power failed: {}", json, e);
-        }
+    /**
+     * ✅ Outbound channel để gửi lệnh điều khiển
+     */
+    @Bean
+    @ServiceActivator(inputChannel = "mqttOutboundChannel")
+    public MessageHandler mqttOutbound() {
+        MqttPahoMessageHandler messageHandler = new MqttPahoMessageHandler(
+                clientId + "_out", mqttClientFactory());
+        messageHandler.setAsync(true);
+        messageHandler.setDefaultQos(1);
+        return messageHandler;
     }
-
-    /* ================= OUTBOUND ================= */
 
     @Bean
     public MessageChannel mqttOutboundChannel() {
         return new DirectChannel();
-    }
-
-    @Bean
-    @ServiceActivator(inputChannel = "mqttOutboundChannel")
-    public MessageHandler mqttOutbound() {
-        MqttPahoMessageHandler handler = new MqttPahoMessageHandler(CLIENT_ID + "_out", mqttClientFactory());
-        handler.setAsync(true);
-        handler.setDefaultTopic("device/control");
-        return handler;
-    }
-
-    /* ================= DEVICE RESOLVE ================= */
-
-    private Long resolveDeviceId(String topic) {
-        Matcher matcher = DEVICE_TOPIC_PATTERN.matcher(topic);
-        if (matcher.matches()) {
-            return Long.parseLong(matcher.group(1));
-        }
-
-        List<com.nguyenanhbinh.lab306new.model.Device> devices = deviceRepository.findByTopic(topic);
-
-        if (devices.size() == 1) {
-            return devices.get(0).getId();
-        }
-
-        if (devices.size() > 1) {
-            LOGGER.error("Trùng topic {} cho {} devices", topic, devices.size());
-        }
-
-        return null;
     }
 }
