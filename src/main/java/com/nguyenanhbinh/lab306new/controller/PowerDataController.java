@@ -72,4 +72,16 @@ public class PowerDataController {
         relayControlService.turnOff();
         return Map.of("message", "Relay turned OFF");
     }
+
+    /**
+     * 🆕 API: XÓA TOÀN BỘ DỮ LIỆU power_data
+     * DELETE http://localhost:8080/power/clear
+     */
+    @DeleteMapping("/clear")
+    public Map<String, Object> clearPowerData() {
+        powerDataService.deleteAllPowerData();
+        return Map.of(
+                "success", true,
+                "message", "All power_data has been cleared");
+    }
 }

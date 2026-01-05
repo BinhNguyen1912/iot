@@ -57,4 +57,10 @@ public class PowerDataService {
         // Nếu DB trống, trả về giá trị mặc định
         return new PowerData(0.0, 0.0, 0);
     }
+
+    public void deleteAllPowerData() {
+        powerDataRepository.truncatePowerData();
+        latestPowerData = null; // clear cache
+        LOGGER.warn("ALL power_data has been TRUNCATED");
+    }
 }
