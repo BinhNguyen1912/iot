@@ -13,7 +13,7 @@ public class JwtUtil {
 
     private static final String SECRET = "THIS_IS_A_VERY_LONG_SECRET_KEY_FOR_JWT_256_BITS";
 
-    private static final long EXPIRATION = 1000 * 60 * 60; // 1 giờ
+    private static final long EXPIRATION = 1000 * 60 * 60 * 24; // 1 giờ
 
     private final Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
 
